@@ -1,0 +1,13 @@
+function doPost(e) {
+  var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+  var params = e.parameter;
+  var data = params.data;
+  var soilMoisture = params.soilMoisture;
+  var city = params.city;
+  var region = params.region;
+  var country = params.country;
+  var lat = params.lat;
+  var lon = params.lon;
+  sheet.appendRow([new Date(), data, soilMoisture, city, region, country, lat, lon]);
+  return ContentService.createTextOutput("Data received and stored");
+}
