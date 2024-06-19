@@ -1,0 +1,200 @@
+CODE DOCUMENTATION
+
+#include <Wire.h>
+#include <ArduinoJson.h>
+
+#define TINY_GSM_MODEM_SIM900
+#include <TinyGsmClient.h>
+
+// Define Serial Ports for SIM900A
+#define SerialMon Serial
+#define MODEM_RST 5
+#define MODEM_PWRKEY 4
+#define MODEM_POWER_ON 23
+#define MODEM_TX 17
+#define MODEM_RX 16
+
+// Network credentials and server URL
+const char* serverUrl = "https://script.google.com/macros/s/<your-script-id>/exec";
+
+// Define soil moisture sensor pin
+#define SOIL_MOISTURE_PIN 34
+
+// Initialize GSM modem
+HardwareSerial SerialAT(2); // Use Serial2 for the modem
+TinyGsm modem(SerialAT);
+TinyGsmClient client(modem);
+
+void setup() {
+  // Set up serial communication
+  SerialMon.begin(115200);
+  delay(10);
+
+  // Set up soil moisture sensor
+  pinMode(SOIL_MOISTURE_PIN, INPUT);
+
+  // Set up modem
+  SerialAT.begin(9600, SERIAL_8N1, MODEM_RX, MODEM_TX);
+  delay(3000);
+
+  // Restart modem
+  SerialMon.println("Initializing modem...");
+  modem.restart();
+
+  // Print modem information
+  String modemInfo = modem.getModemInfo();
+  SerialMon.print("Modem: ");
+  SerialMon.println(modemInfo);
+
+  // Connect to GSM network
+  SerialMon.print("Connecting to GSM network...");
+  if (!modem.waitForNetwork()) {
+    SerialMon.println(" fail");
+    while (true);
+  }
+  SerialMon.println(" success");
+
+  // Connect to GPRS
+  SerialMon.print("Connecting to GPRS...");
+  if (!modem.gprsConnect("internet", "", "")) {
+    SerialMon.println(" fail");
+    while (true);
+  }
+  SerialMon.println(" success");
+
+  SerialMon.println("Enter data to upload and press enter:");
+}
+
+void loop() {
+  // Check if data is available to read from the Serial Monitor
+  if (SerialMon.available() > 0) {
+    // Read the incoming data as a string
+    String dataToUpload = SerialMon.readStringUntil('\n');
+    dataToUpload.trim();  // Remove any leading/trailing whitespace
+
+    // Read soil moisture data
+    int soilMoistureValue = analogRead(SOIL_MOISTURE_PIN);
+    String soilMoistureData = String(soilMoistureValue);
+
+    // Get location data
+    String locationData = getLocation();
+    if (locationData == "") {
+      SerialMon.println("Failed to get location data");
+      return;
+    }
+
+    // Split location data
+    int firstComma = locationData.indexOf(',');
+    int secondComma = locationData.indexOf(',', firstComma + 1);
+    int thirdComma = locationData.indexOf(',', secondComma + 1);
+    int fourthComma = locationData.indexOf(',', thirdComma + 1);
+    int fifthComma = locationData.indexOf(',', fourthComma + 1);
+    String city = locationData.substring(0, firstComma);
+    String region = locationData.substring(firstComma + 1, secondComma);
+    String country = locationData.substring(secondComma + 1, thirdComma);
+    String lat = locationData.substring(thirdComma + 1, fourthComma);
+    String lon = locationData.substring(fourthComma + 1, fifthComma);
+
+    if (uploadDataToServer(dataToUpload, soilMoistureData, city, region, country, lat, lon)) {
+      SerialMon.println("Data uploaded successfully");
+    } else {
+      SerialMon.println("Failed to upload data");
+    }
+
+    SerialMon.println("Enter data to upload and press enter:");
+  }
+}
+
+/**
+ * @brief Get the geographical location using the GSM module.
+ * 
+ * @return A comma-separated string containing city, region, country, latitude, and longitude.
+ */
+String getLocation() {
+  // Use the TinyGsmClient to make the HTTP request
+  if (!client.connect("ip-api.com", 80)) {
+    SerialMon.println("Connection to ip-api.com failed");
+    return "";
+  }
+
+  client.print(String("GET /json/ HTTP/1.1\r\n") +
+               "Host: ip-api.com\r\n" +
+               "Connection: close\r\n\r\n");
+
+  unsigned long timeout = millis();
+  while (client.connected() && millis() - timeout < 10000) {
+    if (client.available()) {
+      String response = client.readStringUntil('\n');
+      if (response == "\r") {
+        break;
+      }
+    }
+  }
+
+  String payload = client.readString();
+  client.stop();
+
+  // Parse the JSON response
+  DynamicJsonDocument doc(1024);
+  DeserializationError error = deserializeJson(doc, payload);
+  if (error) {
+    SerialMon.print("JSON parsing failed: ");
+    SerialMon.println(error.c_str());
+    return "";
+  }
+
+  String city = doc["city"].as<String>();
+  String region = doc["regionName"].as<String>();
+  String country = doc["country"].as<String>();
+  float lat = doc["lat"];  // Get latitude
+  float lon = doc["lon"];  // Get longitude
+
+  String location = city + "," + region + "," + country + "," + String(lat, 6) + "," + String(lon, 6);
+  return location;
+}
+
+/**
+ * @brief Upload data to a Google Sheets script endpoint.
+ * 
+ * @param data The data to upload.
+ * @param soilMoisture The soil moisture data.
+ * @param city The city location.
+ * @param region The region location.
+ * @param country The country location.
+ * @param lat The latitude location.
+ * @param lon The longitude location.
+ * @return True if data upload was successful, false otherwise.
+ */
+bool uploadDataToServer(const String& data, const String& soilMoisture, const String& city, const String& region, const String& country, const String& lat, const String& lon) {
+  if (!client.connect("script.google.com", 443)) {
+    SerialMon.println("Connection to script.google.com failed");
+    return false;
+  }
+
+  String httpRequestData = "data=" + data + "&soilMoisture=" + soilMoisture + "&city=" + city + "&region=" + region + "&country=" + country + "&lat=" + lat + "&lon=" + lon;
+  client.print(String("POST /macros/s/<your-script-id>/exec HTTP/1.1\r\n") +
+               "Host: script.google.com\r\n" +
+               "Content-Type: application/x-www-form-urlencoded\r\n" +
+               "Content-Length: " + httpRequestData.length() + "\r\n" +
+               "Connection: close\r\n\r\n" +
+               httpRequestData);
+
+  unsigned long timeout = millis();
+  while (client.connected() && millis() - timeout < 10000) {
+    if (client.available()) {
+      String response = client.readStringUntil('\n');
+      if (response == "\r") {
+        break;
+      }
+    }
+  }
+
+  String response = client.readString();
+  client.stop();
+
+  SerialMon.println(response);
+
+  return true;
+}
+
+
