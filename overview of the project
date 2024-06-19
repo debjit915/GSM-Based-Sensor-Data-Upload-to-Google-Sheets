@@ -1,0 +1,63 @@
+       Project: GSM-Based Sensor Data Upload to Google Sheets
+
+         Overview
+
+This project is designed to read sensor data from a soil moisture sensor, obtain the device's geographical location, and upload this information to a Google Sheet using a GSM module (SIM900A). The project utilizes the TinyGSM library to manage the GSM module and manually handles HTTP requests to interact with a web service.
+
+         Hardware Requirements
+
+1. ESP32 Development Board
+2. SIM900A GSM Module
+3. Soil Moisture Sensor
+4. Jumper Wires
+5. Breadboard (optional)
+
+         Software Requirements
+
+1. Arduino IDE
+2. TinyGSM Library
+3. ArduinoJson Library
+
+         Connections
+
+-   SIM900A GSM Module  :
+  - `TX` to ESP32 `RX` (pin 16)
+  - `RX` to ESP32 `TX` (pin 17)
+  - `GND` to ESP32 `GND`
+  - `VCC` to 5V Power Supply
+-   Soil Moisture Sensor  :
+  - `Analog Output` to ESP32 Analog Pin (pin 34)
+  - `VCC` to 3.3V Power Supply
+  - `GND` to ESP32 `GND`
+
+
+
+
+
+
+
+
+
+
+       Function Descriptions
+
+1. setup():
+   - Initializes serial communication for monitoring and the GSM module.
+   - Configures the soil moisture sensor.
+   - Restarts and configures the GSM modem.
+   - Connects to the GSM network and GPRS service.
+
+2.   loop()  :
+   - Monitors the serial input for data to upload.
+   - Reads soil moisture data and obtains geographical location.
+   - Uploads data to the specified Google Sheets script endpoint.
+
+3.   getLocation()  :
+   - Connects to `ip-api.com` to get the geographical location.
+   - Parses the JSON response to extract city, region, country, latitude, and longitude.
+
+4.   uploadDataToServer()  :
+   - Connects to the specified Google Sheets script endpoint.
+   - Sends a POST request with the data to be uploaded.
+
+      
